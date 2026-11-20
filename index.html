@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0B1424">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -27,6 +27,9 @@ html,body{margin:0;color:var(--txt);font:16px/1.45 Inter,-apple-system,BlinkMacS
 body{min-height:100vh;padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);overscroll-behavior-y:none;
   background:radial-gradient(90% 40% at 50% -5%,color-mix(in srgb,var(--c1) 16%,transparent),transparent 70%) no-repeat,var(--bg);transition:background .4s}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+/* no double-tap zoom: taps are just taps */
+html,body,button,a,input,label,.row,.card{touch-action:manipulation}
+body{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 svg.i{width:1em;height:1em;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
 .wrap{max-width:560px;margin:0 auto;padding:12px 18px calc(118px + env(safe-area-inset-bottom))}
 
@@ -1007,7 +1010,7 @@ function rCamp(X){
   html+=`<div class="sec">Settings</div><div class="card"><div class="setrow"><span>Sound effects</span><button class="sw ${S.settings.sound?"on":""}" id="snd"></button></div>
     <div class="setrow"><span>Perfect-day animation</span><button class="btn ghost sm" id="prevarch">${I("play")}Preview</button></div></div>`;
   html+=`<div class="sec">Backup</div><div class="card"><div class="note" style="margin-top:0">Your data is stored on this phone only. Copy a backup now and then (e.g. into Notes) so you can restore it on a new phone.</div><div class="acts" style="margin-top:12px"><button class="btn ghost" id="exp">Copy backup</button><button class="btn ghost" id="imp">Restore</button></div></div>`;
-  html+=`<div class="note" id="ver" style="text-align:center;margin-top:20px;opacity:.6;padding:8px;user-select:none">Version 17${S.admin.on?" · admin":""}</div>`;
+  html+=`<div class="note" id="ver" style="text-align:center;margin-top:20px;opacity:.6;padding:8px;user-select:none">Version 18${S.admin.on?" · admin":""}</div>`;
   $("#main").innerHTML=html;
   $("#mng2").onclick=()=>go("manage");bindAccount();
   const ad=$("#adm");if(ad)ad.onclick=()=>go("admin");
@@ -1374,6 +1377,11 @@ document.addEventListener("visibilitychange",()=>{if(!document.hidden&&key(today
 setInterval(()=>{if(view==="quests"&&!document.hidden&&!$("#ov").classList.contains("show"))rQuests()},60000);
 
 
+/* ================= no zoom ================= */
+// iOS Safari ignores user-scalable=no for pinches, so block the gesture events too.
+["gesturestart","gesturechange","gestureend"].forEach(ev=>document.addEventListener(ev,e=>e.preventDefault(),{passive:false}));
+document.addEventListener("touchmove",e=>{if(e.touches&&e.touches.length>1)e.preventDefault()},{passive:false});
+let lastTouchEnd=0;document.addEventListener("touchend",e=>{const n=Date.now();if(n-lastTouchEnd<300&&!e.target.closest("input,textarea"))e.preventDefault();lastTouchEnd=n},{passive:false});
 /* ================= boot ================= */
 loadLocal();render();
 try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
