@@ -203,12 +203,36 @@ textarea{min-height:120px;font-size:12px;font-family:ui-monospace,monospace}
 @keyframes pop2{0%{transform:scale(0)}70%{transform:scale(1.2)}100%{transform:scale(1)}}
 @keyframes rise{from{transform:translateY(24px);opacity:0}}
 @media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+#pFz b{color:#7dd3fc}#pFz.none{opacity:.35}
+.banner.ice{background:linear-gradient(135deg,#0e7490,#1cb0f6)}
+.heat b.fz{background:#1cb0f6;opacity:.55}
+.wkp{color:var(--mut)}.wkp.hit{color:#58cc02}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--card2);padding:4px;border-radius:14px}
+.seg button{padding:10px 0;border-radius:10px;font-weight:900;font-size:14px;color:var(--mut);transition:background .2s,color .2s}
+.seg button.on{background:#1cb0f6;color:#fff;box-shadow:0 3px 0 #1592cc}
+.stepper{display:flex;align-items:center;justify-content:center;gap:22px;margin-top:14px}
+.stepper button{width:48px;height:48px;border-radius:14px;background:var(--card2);font-size:26px;font-weight:900;box-shadow:0 4px 0 #0a0c10}
+.stepper button:active{transform:translateY(4px);box-shadow:none}
+.stepper button:disabled{opacity:.3}
+.stepper div{text-align:center;min-width:110px}
+.stepper b{display:block;font-size:40px;font-weight:900;color:#1cb0f6;line-height:1}
+.stepper span{font-size:13px;color:var(--mut)}
+.fzrow{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px}
+.fzrow b{color:#7dd3fc}
+.btn.buy{width:auto;padding:10px 16px;background:#1cb0f6;box-shadow:0 4px 0 #1592cc;font-size:14px}
+.btn:disabled{opacity:.4;pointer-events:none}
+.instbar{display:flex;align-items:center;gap:10px;width:100%;background:linear-gradient(135deg,rgba(28,176,246,.18),rgba(206,130,255,.18));border:2px solid rgba(28,176,246,.5);border-radius:var(--r);padding:12px 14px;margin-bottom:14px;text-align:left;font-size:14px}
+.instbar span{flex:1}.instbar b{color:#1cb0f6}
+.steps{margin:14px 0;padding-left:22px;font-size:15px;line-height:1.5}
+.steps li{margin-bottom:8px}
+.kbd{display:inline-block;background:var(--card2);border-radius:6px;padding:0 6px;font-size:13px}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="topbar">
     <div class="pill" id="pStreak" title="Day streak"><span>🔥</span><b id="vStreak">0</b></div>
+    <div class="pill" id="pFz" title="Streak freezes"><span>🧊</span><b id="vFz">0</b></div>
     <div class="pill" id="pLvl" title="Level"><span>⭐</span><b id="vLvl">1</b></div>
     <div class="pill" id="pXP" title="Total XP"><span>💎</span><b id="vXP">0</b></div>
   </div>
@@ -255,29 +279,71 @@ function saveLocal(){try{localStorage.setItem(LS,JSON.stringify(S))}catch(e){}}
 function commit(){S.updated=Date.now();saveLocal();render()}
 
 /* ---------- habit logic ---------- */
+const FREEZE_MAX=2,FREEZE_COST=200,XP_WEEK=30;
+const weekly=h=>h.freq==="week";
 const isDone=(h,k)=>!!(S.log[k]&&S.log[k][h.id]);
-const sched=(h,d)=>h.days.includes(dow(d));
+const sched=(h,d)=>!weekly(h)&&h.days.includes(dow(d));
+const frozenMiss=(h,k)=>!!S.frozen[k]&&!isDone(h,k);
+const anyDone=k=>!!(S.log[k]&&Object.keys(S.log[k]).length);
+const weekStart=d=>addDays(d,-dow(d));
+function normalize(){
+  S.settings=Object.assign({sound:true},S.settings||{});S.log=S.log||{};S.frozen=S.frozen||{};
+  if(S.freezes===undefined)S.freezes=1;S.spent=S.spent||0;
+  S.habits.forEach(h=>{if(!h.freq)h.freq="days";if(!h.target)h.target=3;if(!h.days||!h.days.length)h.days=[0,1,2,3,4,5,6]});
+}
 function startOf(h){let s=h.created;for(const k in S.log)if(S.log[k][h.id]&&k<s)s=k;return parse(s)}
-function toggle(h,k){S.log[k]=S.log[k]||{};if(S.log[k][h.id])delete S.log[k][h.id];else S.log[k][h.id]=1;if(!Object.keys(S.log[k]).length)delete S.log[k];commit()}
+function toggle(h,k){
+  S.log[k]=S.log[k]||{};if(S.log[k][h.id])delete S.log[k][h.id];else S.log[k][h.id]=1;
+  if(!Object.keys(S.log[k]).length)delete S.log[k];
+  // back-filling a day that used a freeze gives the freeze back
+  if(S.frozen[k]&&anyDone(k)){delete S.frozen[k];S.freezes=Math.min(FREEZE_MAX,S.freezes+1)}
+  commit();
+}
+function weekCount(h,d){const ws=weekStart(d);let c=0;for(let i=0;i<7;i++)if(isDone(h,key(addDays(ws,i))))c++;return c}
 function streak(h){
+  if(weekly(h)){const st=weekStart(startOf(h));let w=weekStart(today()),n=0;if(weekCount(h,w)<h.target)w=addDays(w,-7);while(w>=st&&weekCount(h,w)>=h.target){n++;w=addDays(w,-7)}return n}
   const st=startOf(h);let d=today(),n=0;
   if(!isDone(h,key(d)))d=addDays(d,-1);
-  while(d>=st){if(sched(h,d)){if(isDone(h,key(d)))n++;else break}d=addDays(d,-1)}
+  while(d>=st){const k=key(d);if(sched(h,d)&&!frozenMiss(h,k)){if(isDone(h,k))n++;else break}d=addDays(d,-1)}
   return n;
 }
 function best(h){
-  const t=today();let d=startOf(h),run=0,b=0;
-  while(d<=t){if(sched(h,d)){if(isDone(h,key(d))){run++;b=Math.max(b,run)}else if(+d!==+t)run=0}d=addDays(d,1)}
+  const t=today();
+  if(weekly(h)){const cw=weekStart(t);let w=weekStart(startOf(h)),run=0,b=0;while(w<=cw){if(weekCount(h,w)>=h.target){run++;b=Math.max(b,run)}else if(+w!==+cw)run=0;w=addDays(w,7)}return b}
+  let d=startOf(h),run=0,b=0;
+  while(d<=t){const k=key(d);if(sched(h,d)&&!frozenMiss(h,k)){if(isDone(h,k)){run++;b=Math.max(b,run)}else if(+d!==+t)run=0}d=addDays(d,1)}
   return b;
 }
 function rate(h,days){
-  const t=today(),st=startOf(h);let s=0,c=0;
-  for(let i=0;i<days;i++){const d=addDays(t,-i);if(d<st)break;if(!sched(h,d))continue;const k=key(d);if(+d===+t&&!isDone(h,k))continue;s++;if(isDone(h,k))c++}
+  const t=today(),st=startOf(h);
+  if(weekly(h)){ // % of the last 4 finished weeks (plus this week once it's hit) where the target was met
+    const cw=weekStart(t);let s=0,c=0;if(weekCount(h,cw)>=h.target){s++;c++}
+    for(let i=1;i<=4;i++){const w=addDays(cw,-7*i);if(addDays(w,6)<st)break;s++;if(weekCount(h,w)>=h.target)c++}
+    return s?Math.round(c/s*100):null;
+  }
+  let s=0,c=0;
+  for(let i=0;i<days;i++){const d=addDays(t,-i);if(d<st)break;const k=key(d);if(!sched(h,d)||frozenMiss(h,k))continue;if(+d===+t&&!isDone(h,k))continue;s++;if(isDone(h,k))c++}
   return s?Math.round(c/s*100):null;
 }
 function isPerfect(k){const d=parse(k);const hs=S.habits.filter(h=>sched(h,d)&&d>=startOf(h));return hs.length>0&&hs.every(h=>isDone(h,k))}
-const anyDone=k=>!!(S.log[k]&&Object.keys(S.log[k]).length);
-function dayStreak(){let d=today(),n=0;if(!anyDone(key(d)))d=addDays(d,-1);while(anyDone(key(d))){n++;d=addDays(d,-1)}return n}
+function dayStreak(){const ok=k=>anyDone(k)||!!S.frozen[k];let d=today(),n=0;if(!anyDone(key(d)))d=addDays(d,-1);while(ok(key(d))){if(anyDone(key(d)))n++;d=addDays(d,-1)}return n}
+// Runs once per day: any fully-missed day that would break the streak uses an equipped freeze.
+function applyFreezes(){
+  const y=addDays(today(),-1),yk=key(y);
+  if(S.checked===yk)return false;
+  if(!S.checked){S.checked=yk;return false}
+  let d=addDays(parse(S.checked),1);const used=[];
+  if(d<addDays(y,-60))d=addDays(y,-60);
+  for(;d<=y;d=addDays(d,1)){
+    const k=key(d);if(anyDone(k)||S.frozen[k])continue;
+    const pk=key(addDays(d,-1));
+    if((anyDone(pk)||S.frozen[pk])&&S.freezes>0){S.frozen[k]=1;S.freezes--;used.push(k)}
+  }
+  S.checked=yk;
+  if(used.length)setTimeout(()=>celebrate({icon:"🧊",color:"#1cb0f6",title:used.length>1?`${used.length} streak freezes used`:"Streak freeze used",
+    sub:`You missed ${used.length>1?used.length+" days":dayLabel(parse(used[0])).toLowerCase()}, but your 🔥 ${dayStreak()} day streak is safe. ${S.freezes} freeze${S.freezes===1?"":"s"} left.`,sound:"streak"}),300);
+  return used.length>0;
+}
 
 /* ---------- points ---------- */
 // XP is recalculated from history every time, so ticking/unticking or back-filling always stays consistent.
@@ -285,13 +351,16 @@ function computeXP(){
   const hs=S.habits,out={total:0,byDay:{}};if(!hs.length)return out;
   const st=new Map(hs.map(h=>[h.id,startOf(h)]));
   let first=today();st.forEach(v=>{if(v<first)first=v});
-  const t=today(),run={};
+  const t=today(),run={},wc={};
   for(let d=new Date(first);d<=t;d=addDays(d,1)){
     const k=key(d);let dx=0,sc=0,dn=0;
+    if(dow(d)===0)for(const id in wc)wc[id]=0;
     for(const h of hs){
       if(d<st.get(h.id))continue;
       const done=isDone(h,k);
+      if(weekly(h)){if(done){dx+=XP_BASE;wc[h.id]=(wc[h.id]||0)+1;if(wc[h.id]===h.target)dx+=XP_WEEK}continue}
       if(!sched(h,d)){if(done)dx+=XP_BASE;continue}
+      if(S.frozen[k]&&!done)continue;
       sc++;
       if(done){run[h.id]=(run[h.id]||0)+1;dn++;dx+=XP_BASE+Math.min(run[h.id]-1,XP_STREAK_CAP)*XP_STREAK_STEP}
       else if(+d!==+t)run[h.id]=0;
@@ -301,6 +370,7 @@ function computeXP(){
   }
   return out;
 }
+const balance=X=>X.total-(S.spent||0);
 function lvl(xp){let L=1,need=100;while(xp>=need){xp-=need;L++;need=100+50*(L-1)}return{L,into:xp,need}}
 
 /* ---------- sound + haptics ---------- */
@@ -320,6 +390,24 @@ const SFX={
   level:()=>tones([392,523.3,659.3,784,1046.5,784,1046.5,1568],{gap:.085,dur:.12}),
   streak:()=>tones([659.3,784,987.8,1318.5],{gap:.08,dur:.12})
 };
+// Wooden "piece placed on a board" clack: filtered noise click + low knock + short wood resonance
+let NB=null;
+function clack(vol=.45){
+  if(!S.settings.sound)return;
+  try{AC=AC||new(window.AudioContext||window.webkitAudioContext)();if(AC.state==="suspended")AC.resume();
+    if(!NB){NB=AC.createBuffer(1,AC.sampleRate*.08|0,AC.sampleRate);const d=NB.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,4)}
+    const t=AC.currentTime+.004,out=AC.destination;
+    const n=AC.createBufferSource();n.buffer=NB;n.playbackRate.value=.9+Math.random()*.2;
+    const bp=AC.createBiquadFilter();bp.type="bandpass";bp.frequency.value=1700+Math.random()*400;bp.Q.value=2.2;
+    const g=AC.createGain();g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.001,t+.05);
+    n.connect(bp);bp.connect(g);g.connect(out);n.start(t);n.stop(t+.08);
+    const o=AC.createOscillator(),og=AC.createGain();o.type="sine";o.frequency.setValueAtTime(240,t);o.frequency.exponentialRampToValueAtTime(85,t+.06);
+    og.gain.setValueAtTime(vol*.9,t);og.gain.exponentialRampToValueAtTime(.001,t+.08);o.connect(og);og.connect(out);o.start(t);o.stop(t+.1);
+    const o2=AC.createOscillator(),g2=AC.createGain();o2.type="triangle";o2.frequency.value=640+Math.random()*60;
+    g2.gain.setValueAtTime(vol*.22,t);g2.gain.exponentialRampToValueAtTime(.001,t+.045);o2.connect(g2);g2.connect(out);o2.start(t);o2.stop(t+.06);
+  }catch(e){}
+}
+document.addEventListener("pointerdown",e=>{if(e.target.closest&&e.target.closest("button"))clack()},{passive:true});
 const vib=ms=>{try{navigator.vibrate&&navigator.vibrate(ms)}catch(e){}};
 
 /* ---------- effects ---------- */
@@ -368,22 +456,26 @@ function nextCel(){
 const CHECK='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 let shown=null,ringPrev={k:null,p:0};
 function renderTop(){
-  const X=computeXP(),lv=lvl(X.total),ds=dayStreak();
-  if(!shown)shown={xp:X.total,L:lv.L,ds};
-  countUp($("#vXP"),shown.xp,X.total);
-  $("#vLvl").textContent=lv.L;$("#vStreak").textContent=ds;
+  const X=computeXP(),lv=lvl(X.total),ds=dayStreak(),bal=balance(X);
+  if(!shown)shown={xp:X.total,bal,L:lv.L,ds,fz:S.freezes};
+  countUp($("#vXP"),shown.bal,bal);
+  $("#vLvl").textContent=lv.L;$("#vStreak").textContent=ds;$("#vFz").textContent=S.freezes;
   if(ds>shown.ds)bumpEl($("#pStreak"));
-  if(X.total>shown.xp)bumpEl($("#pXP"));
+  if(bal!==shown.bal)bumpEl($("#pXP"));
   if(lv.L!==shown.L)bumpEl($("#pLvl"));
+  if(S.freezes!==shown.fz)bumpEl($("#pFz"));
+  $("#pFz").classList.toggle("none",!S.freezes);
   $("#pStreak").classList.toggle("cold",!anyDone(key(today())));
   const fill=$("#xpFill"),pct=lv.into/lv.need*100;
   if(lv.L>shown.L){fill.style.width="100%";setTimeout(()=>{fill.style.transition="none";fill.style.width="0";void fill.offsetWidth;fill.style.transition="";fill.style.width=pct+"%"},750)}
   else fill.style.width=pct+"%";
   $("#xpTxt").textContent=`${lv.into} / ${lv.need} XP · Level ${lv.L+1}`;
-  shown={xp:X.total,L:lv.L,ds};
+  shown={xp:X.total,bal,L:lv.L,ds,fz:S.freezes};
   return X;
 }
 function render(){
+  normalize();
+  if(applyFreezes()){setTimeout(commit,0)}
   document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on",b.dataset.v===view));
   if(typeof lensTo==="function")lensTo(tabIdx());
   const X=renderTop();
@@ -395,11 +487,13 @@ function ring(done,total,k){
   return `<div class="ring"><svg width="58" height="58"><circle cx="29" cy="29" r="${r}" stroke="#20242d" stroke-width="7" fill="none"/><circle class="p" id="ringc" data-to="${c*(1-p)}" cx="29" cy="29" r="${r}" stroke="var(--acc)" stroke-width="7" fill="none" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${c*(1-from)}"/></svg><span>${done}/${total}</span></div>`;
 }
 function habitRow(h,k){
-  const s=streak(h);
+  const s=streak(h);let meta="";
+  if(weekly(h)){const c=weekCount(h,parse(k)),hit=c>=h.target;
+    meta=`<div class="meta"><span class="wkp ${hit?"hit":""}">${hit?"✅":"🗓️"} ${c}/${h.target} this week</span>${s?`<span class="fl">🔥 ${s} week streak</span>`:""}</div>`}
+  else if(s)meta=`<div class="meta"><span class="fl">🔥 ${s} day streak</span></div>`;
   return `<button class="row ${isDone(h,k)?"done":""}" style="--c:${h.color}" data-t="${h.id}">
     <div class="emo">${h.emoji}</div>
-    <div class="info"><div class="name">${esc(h.name)}</div>
-      ${s?`<div class="meta"><span class="fl">🔥 ${s} day streak</span></div>`:""}</div>
+    <div class="info"><div class="name">${esc(h.name)}</div>${meta}</div>
     <div class="chk">${CHECK}</div></button>`;
 }
 function rToday(X){
@@ -407,16 +501,20 @@ function rToday(X){
   $("#subtitle").textContent=new Date().toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long"});
   if(!S.habits.length){$("#main").innerHTML=emptyState();return}
   const k=key(cur);
-  const on=S.habits.filter(h=>sched(h,cur));
+  const on=S.habits.filter(h=>sched(h,cur)),wkh=S.habits.filter(weekly);
   const done=on.filter(h=>isDone(h,k)).length;
   const isToday=+cur===+today();
   const dxp=X.byDay[k]||0;
-  let html=`<div class="daynav"><button id="prev">‹</button><div class="mid"><div class="lbl">${dayLabel(cur)}</div><div class="sub">${on.length?`${done} of ${on.length} done · 💎 ${dxp} XP`:"Rest day"}</div></div>${ring(done,on.length,k)}<button id="next" ${isToday?"disabled":""}>›</button></div>`;
-  if(on.length&&done===on.length)html+=`<div class="banner">🏆 Perfect day · +${XP_PERFECT} XP bonus</div>`;
-  html+=`<div class="list">${on.map(h=>habitRow(h,k)).join("")}</div>`;
-  if(!on.length)html+=`<div class="empty"><div style="font-size:44px">😌</div><h3 style="margin:8px 0 0;font-weight:900">Rest day</h3><p style="margin-bottom:0">No habits are scheduled for ${dayLabel(cur)==="Today"?"today":"this day"}.</p></div>`;
+  let html=`<div class="daynav"><button id="prev">‹</button><div class="mid"><div class="lbl">${dayLabel(cur)}</div><div class="sub">${on.length?`${done} of ${on.length} done · 💎 ${dxp} XP`:wkh.length?`💎 ${dxp} XP`:"Rest day"}</div></div>${ring(done,on.length,k)}<button id="next" ${isToday?"disabled":""}>›</button></div>`;
+  if(S.frozen[k]&&!anyDone(k))html+=`<div class="banner ice">🧊 A streak freeze protected this day</div>`;
+  else if(on.length&&done===on.length)html+=`<div class="banner">🏆 Perfect day · +${XP_PERFECT} XP bonus</div>`;
+  if(on.length)html+=`<div class="list">${on.map(h=>habitRow(h,k)).join("")}</div>`;
+  if(wkh.length)html+=`<div class="sec">This week</div><div class="list">${wkh.map(h=>habitRow(h,k)).join("")}</div>`;
+  if(!on.length&&!wkh.length)html+=`<div class="empty"><div style="font-size:44px">😌</div><h3 style="margin:8px 0 0;font-weight:900">Rest day</h3><p style="margin-bottom:0">No habits are scheduled for ${dayLabel(cur)==="Today"?"today":"this day"}.</p></div>`;
   if(!isToday)html+=`<div class="note" style="text-align:center;margin-top:14px">Filling in a past day · <a href="#" id="jt" style="color:#1cb0f6">jump to today</a></div>`;
+  if(!STANDALONE&&!skippedInstall())html=`<button class="instbar" id="instbar">📲 <span>Install on your home screen before you start</span><b>How?</b></button>`+html;
   $("#main").innerHTML=html;
+  const ib=$("#instbar");if(ib)ib.onclick=installSheet;
   const rc=$("#ringc");if(rc)requestAnimationFrame(()=>requestAnimationFrame(()=>rc.style.strokeDashoffset=rc.dataset.to));
   $("#prev").onclick=()=>{cur=addDays(cur,-1);render()};
   $("#next").onclick=()=>{if(!isToday){cur=addDays(cur,1);render()}};
@@ -424,9 +522,9 @@ function rToday(X){
   document.querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{const h=S.habits.find(x=>x.id===b.dataset.t);if(h)tap(h,k)});
 }
 function tap(h,k){
-  const b={xp:computeXP().total,L:lvl(computeXP().total).L,perfect:isPerfect(k),ds:dayStreak()};
+  const X0=computeXP(),b={xp:X0.total,L:lvl(X0.total).L,perfect:isPerfect(k),ds:dayStreak(),wc:weekly(h)?weekCount(h,parse(k)):0};
   toggle(h,k);
-  const X=computeXP(),a={xp:X.total,L:lvl(X.total).L,perfect:isPerfect(k),ds:dayStreak()};
+  const X=computeXP(),a={xp:X.total,L:lvl(X.total).L,perfect:isPerfect(k),ds:dayStreak(),wc:weekly(h)?weekCount(h,parse(k)):0};
   const row=document.querySelector(`[data-t="${h.id}"]`);if(!row)return;
   const r=row.querySelector(".chk").getBoundingClientRect(),diff=a.xp-b.xp;
   if(isDone(h,k)){
@@ -435,6 +533,8 @@ function tap(h,k){
     floatXP(r,diff);
   }else{SFX.untick();floatXP(r,diff)}
   const isToday=k===key(today());
+  if(weekly(h)&&b.wc<h.target&&a.wc>=h.target)
+    celebrate({icon:"🗓️",color:"#ce82ff",big:`${h.target}/${h.target}`,title:"Weekly goal hit!",sub:`${esc(h.name)}: done ${h.target} time${h.target===1?"":"s"} this week. Any extra is a bonus.`,xp:XP_WEEK,sound:"perfect"});
   if(!b.perfect&&a.perfect){
     const n=S.habits.filter(x=>sched(x,parse(k))).length;
     celebrate(isToday?{icon:"🏆",color:"#ffc800",title:"Perfect day!",sub:`You completed all ${n} habit${n===1?"":"s"} today. Come back tomorrow to keep it going.`,xp:XP_PERFECT,sound:"perfect"}
@@ -446,6 +546,7 @@ function tap(h,k){
 }
 function dayLabel(d){const t=today(),diff=Math.round((t-d)/864e5);if(diff===0)return"Today";if(diff===1)return"Yesterday";return d.toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}
 function daysText(days){if(days.length===7)return"Every day";if(days.length===5&&[0,1,2,3,4].every(x=>days.includes(x)))return"Weekdays";if(days.length===2&&days.includes(5)&&days.includes(6))return"Weekends";return days.slice().sort().map(i=>DNL[i]).join(", ")}
+const freqText=h=>weekly(h)?`${h.target}× a week, any days`:daysText(h.days);
 function emptyState(){
   setTimeout(()=>{document.querySelectorAll("[data-s]").forEach(b=>b.onclick=()=>{const[e,n]=SUGG[+b.dataset.s];addHabit({name:n,emoji:e});toast("Added "+n)});const a=$("#addfirst");if(a)a.onclick=()=>editor()},0);
   return `<div class="empty"><div style="font-size:44px">🌱</div><h3 style="margin:8px 0 0;font-weight:900">Start your first habit</h3><p>Tap a suggestion or create your own.</p>
@@ -459,71 +560,88 @@ function rStats(X){
   let cells="",perfect=0;
   for(let d=new Date(start);d<=end;d=addDays(d,1)){
     if(d>t){cells+=`<b class="f"></b>`;continue}
-    const k=key(d),hs=S.habits.filter(h=>sched(h,d)&&d>=startOf(h));
-    const c=hs.filter(h=>isDone(h,k)).length;
-    let l=0;if(hs.length&&c){const p=c/hs.length;l=p>=1?4:p>=.66?3:p>=.33?2:1}
-    cells+=`<b class="l${l} ${+d===+t?"t":""}"></b>`;
+    const k=key(d),hs=S.habits.filter(h=>sched(h,d)&&d>=startOf(h)&&!frozenMiss(h,k));
+    const c=hs.filter(h=>isDone(h,k)).length,wd=S.habits.filter(h=>weekly(h)&&isDone(h,k)).length;
+    const den=hs.length+wd,num=c+wd;
+    let l=0;if(den&&num){const p=num/den;l=p>=1?4:p>=.66?3:p>=.33?2:1}
+    cells+=`<b class="l${l} ${S.frozen[k]&&!anyDone(k)?"fz":""} ${+d===+t?"t":""}"></b>`;
   }
   for(const k in S.log)if(isPerfect(k))perfect++;
   let bestDay=0;for(const k in X.byDay)bestDay=Math.max(bestDay,X.byDay[k]);
   const wk=[];for(let i=6;i>=0;i--){const d=addDays(t,-i);wk.push({d,xp:X.byDay[key(d)]||0})}
   const mx=Math.max(20,...wk.map(w=>w.xp)),wkTotal=wk.reduce((s,w)=>s+w.xp,0);
   let html=`<div class="card"><div class="lvlcard"><div class="lvlbadge">${lv.L}</div><div class="info"><div class="name" style="font-size:18px">Level ${lv.L}</div>
-    <div class="sub">💎 ${X.total.toLocaleString()} XP total · ${lv.need-lv.into} XP to level ${lv.L+1}</div>
+    <div class="sub">${X.total.toLocaleString()} XP earned · 💎 ${balance(X).toLocaleString()} to spend</div>
     <div class="bar" style="--c:var(--gold)"><i style="width:${lv.into/lv.need*100}%"></i></div></div></div></div>`;
   html+=`<div class="kpis"><div class="kpi"><b style="color:#ff9600">🔥${dayStreak()}</b><span>Day streak</span></div><div class="kpi"><b style="color:var(--gold)">${perfect}</b><span>Perfect days</span></div><div class="kpi"><b style="color:#1cb0f6">${bestDay}</b><span>Best day XP</span></div></div>`;
-  html+=`<div class="card"><h3>Last 7 days · 💎 ${wkTotal} XP</h3><div class="wk">${wk.map((w,i)=>`<div><em>${w.xp||""}</em><i class="${i===6?"today":""}" style="height:${w.xp/mx*80}%;animation-delay:${i*50}ms"></i><small>${DN[dow(w.d)]}</small></div>`).join("")}</div></div>`;
-  html+=`<div class="card"><h3>Consistency · last 16 weeks</h3><div class="heat">${cells}</div><div class="legend">Less <b style="background:#20242d"></b><b style="background:#2b4a12"></b><b style="background:#3d7a0a"></b><b style="background:#4caf05"></b><b style="background:#58cc02"></b> More</div></div>`;
-  html+=S.habits.map(h=>{const r30=rate(h,30);return `<div class="card" style="--c:${h.color}"><div class="hs"><div class="emo">${h.emoji}</div><div class="info"><div class="name">${esc(h.name)}</div>
-    <div class="stats"><span>Streak <b>${streak(h)}</b></span><span>Best <b>${best(h)}</b></span><span>30d <b>${r30===null?"–":r30+"%"}</b></span></div></div></div>
-    <div class="bar"><i style="width:${r30||0}%"></i></div></div>`}).join("");
+  html+=`<div class="card"><h3>Last 7 days · ${wkTotal} XP</h3><div class="wk">${wk.map((w,i)=>`<div><em>${w.xp||""}</em><i class="${i===6?"today":""}" style="height:${w.xp/mx*80}%;animation-delay:${i*50}ms"></i><small>${DN[dow(w.d)]}</small></div>`).join("")}</div></div>`;
+  html+=`<div class="card"><h3>Consistency · last 16 weeks</h3><div class="heat">${cells}</div><div class="legend"><b style="background:#1cb0f6;opacity:.55"></b> Freeze&nbsp;&nbsp; Less <b style="background:#20242d"></b><b style="background:#2b4a12"></b><b style="background:#3d7a0a"></b><b style="background:#4caf05"></b><b style="background:#58cc02"></b> More</div></div>`;
+  html+=S.habits.map(h=>{const r=rate(h,30),w=weekly(h);return `<div class="card" style="--c:${h.color}"><div class="hs"><div class="emo">${h.emoji}</div><div class="info"><div class="name">${esc(h.name)}</div>
+    <div class="stats"><span>Streak <b>${streak(h)}${w?" wk":""}</b></span><span>Best <b>${best(h)}${w?" wk":""}</b></span><span>${w?"Weeks hit":"30d"} <b>${r===null?"–":r+"%"}</b></span></div></div></div>
+    <div class="bar"><i style="width:${r||0}%"></i></div></div>`}).join("");
   $("#main").innerHTML=html;
 }
-function rHabits(){
+function rHabits(X){
   $("#title").textContent="Habits";$("#subtitle").textContent=`${S.habits.length} habit${S.habits.length===1?"":"s"}`;
-  let html=S.habits.map((h,i)=>`<div class="mrow" style="--c:${h.color}"><div class="emo">${h.emoji}</div><div class="info"><div class="name">${esc(h.name)}</div><div class="days">${daysText(h.days)}</div></div>
+  const bal=balance(X),full=S.freezes>=FREEZE_MAX,poor=bal<FREEZE_COST;
+  let html=S.habits.map((h,i)=>`<div class="mrow" style="--c:${h.color}"><div class="emo">${h.emoji}</div><div class="info"><div class="name">${esc(h.name)}</div><div class="days">${freqText(h)}</div></div>
     <button class="ib" data-up="${i}" ${i===0?"disabled":""}>↑</button><button class="ib" data-dn="${i}" ${i===S.habits.length-1?"disabled":""}>↓</button><button class="ib" data-ed="${h.id}">✎</button></div>`).join("");
   html+=`<button class="btn" id="add" style="margin-top:6px">+ Add habit</button>`;
+  html+=`<div class="sec">Shop</div><div class="card"><div class="hs"><div class="emo" style="--c:#1cb0f6">🧊</div><div class="info"><div class="name">Streak freeze</div>
+    <div class="sub" style="font-size:13px">Miss a whole day and a freeze is used automatically, so your streaks don't reset.</div></div></div>
+    <div class="fzrow"><span>Equipped <b>${S.freezes}/${FREEZE_MAX}</b></span><button class="btn buy" id="buyfz" ${full||poor?"disabled":""}>${full?"Fully stocked":`Buy · 💎 ${FREEZE_COST}`}</button></div>
+    ${!full&&poor?`<div class="note" style="margin-bottom:0">You have 💎 ${bal}. Earn ${FREEZE_COST-bal} more to buy one.</div>`:""}</div>`;
   html+=`<div class="sec">How you earn XP</div><div class="card"><ul class="pts">
     <li><span>Complete a habit</span><b>+${XP_BASE}</b></li>
     <li><span>Streak bonus (per day in a row)</span><b>+${XP_STREAK_STEP}, up to +${XP_STREAK_STEP*XP_STREAK_CAP}</b></li>
-    <li><span>Perfect day (everything done)</span><b>+${XP_PERFECT}</b></li>
-    <li><span>Level up every</span><b>100 XP, +50 per level</b></li></ul></div>`;
+    <li><span>Perfect day (all daily habits)</span><b>+${XP_PERFECT}</b></li>
+    <li><span>Hit a weekly goal</span><b>+${XP_WEEK}</b></li>
+    <li><span>Level up every</span><b>100 XP, +50 per level</b></li></ul>
+    <div class="note" style="margin-bottom:0">Spending 💎 in the shop never lowers your level.</div></div>`;
   html+=`<div class="sec">Settings</div><div class="card"><div class="setrow"><span>🔊 Sound effects</span><button class="sw ${S.settings.sound?"on":""}" id="snd" aria-label="Sound"></button></div></div>`;
   html+=`<div class="sec">Backup</div><div class="card"><div class="note" style="margin-top:0">Your data is stored on this phone only. Copy a backup now and then (e.g. into Notes) so you can restore it on a new phone.</div><div class="acts" style="margin-top:12px"><button class="btn ghost" id="exp">Copy backup</button><button class="btn ghost" id="imp">Restore</button></div></div>`;
-  html+=`<div class="note" style="text-align:center;margin-top:18px;opacity:.6">Version 5</div>`;
+  html+=`<div class="note" style="text-align:center;margin-top:18px;opacity:.6">Version 7</div>`;
   $("#main").innerHTML=html;
   $("#add").onclick=()=>editor();
+  $("#buyfz").onclick=e=>{if(S.freezes>=FREEZE_MAX||balance(computeXP())<FREEZE_COST)return;const r=e.currentTarget.getBoundingClientRect();S.spent+=FREEZE_COST;S.freezes++;commit();SFX.tick();vib(15);burst(r.left+r.width/2,r.top+r.height/2,"#1cb0f6",22);toast("🧊 Streak freeze equipped")};
   $("#snd").onclick=()=>{S.settings.sound=!S.settings.sound;commit();if(S.settings.sound)SFX.tick()};
   document.querySelectorAll("[data-ed]").forEach(b=>b.onclick=()=>editor(S.habits.find(h=>h.id===b.dataset.ed)));
   document.querySelectorAll("[data-up]").forEach(b=>b.onclick=()=>{const i=+b.dataset.up;[S.habits[i-1],S.habits[i]]=[S.habits[i],S.habits[i-1]];commit()});
   document.querySelectorAll("[data-dn]").forEach(b=>b.onclick=()=>{const i=+b.dataset.dn;[S.habits[i+1],S.habits[i]]=[S.habits[i],S.habits[i+1]];commit()});
   $("#exp").onclick=async()=>{try{await navigator.clipboard.writeText(JSON.stringify(S));toast("Backup copied")}catch(e){openSheet(`<h2>Backup</h2><div class="note">Copy this text and keep it somewhere safe.</div><textarea readonly>${esc(JSON.stringify(S))}</textarea><div class="acts"><button class="btn ghost" data-close>Close</button></div>`)}};
   $("#imp").onclick=()=>{openSheet(`<h2>Restore backup</h2><div class="note">Paste a backup. This replaces all current habits and history.</div><textarea id="impt" placeholder='{"v":1,...}'></textarea><div class="acts"><button class="btn ghost" data-close>Cancel</button><button class="btn danger" id="impgo">Replace</button></div>`);
-    $("#impgo").onclick=()=>{try{const p=JSON.parse($("#impt").value);if(!p||!Array.isArray(p.habits)||typeof p.log!=="object")throw 0;p.settings=Object.assign({sound:true},p.settings||{});S=p;shown=null;closeSheet();commit();toast("Restored")}catch(e){toast("That backup isn't valid")}}};
+    $("#impgo").onclick=()=>{try{const p=JSON.parse($("#impt").value);if(!p||!Array.isArray(p.habits)||typeof p.log!=="object")throw 0;S=p;normalize();shown=null;closeSheet();commit();toast("Restored")}catch(e){toast("That backup isn't valid")}}};
 }
 
 /* ---------- editor ---------- */
-function addHabit(o){S.habits.push({id:uid(),name:o.name,emoji:o.emoji||"🎯",color:o.color||COLORS[S.habits.length%COLORS.length],days:o.days||[0,1,2,3,4,5,6],created:key(today())});commit()}
+function addHabit(o){S.habits.push({id:uid(),name:o.name,emoji:o.emoji||"🎯",color:o.color||COLORS[S.habits.length%COLORS.length],freq:o.freq||"days",target:o.target||3,days:o.days||[0,1,2,3,4,5,6],created:key(today())});commit()}
 function editor(h){
-  const st={name:h?h.name:"",emoji:h?h.emoji:"🎯",color:h?h.color:COLORS[S.habits.length%COLORS.length],days:h?h.days.slice():[0,1,2,3,4,5,6]};
+  const st={name:h?h.name:"",emoji:h?h.emoji:"🎯",color:h?h.color:COLORS[S.habits.length%COLORS.length],freq:h?h.freq:"days",target:h?h.target:3,days:h?h.days.slice():[0,1,2,3,4,5,6]};
   const draw=()=>{
+    const y=$("#sheet").scrollTop;
     openSheet(`<h2>${h?"Edit habit":"New habit"}</h2>
-    <label class="f">Name</label><input type="text" id="hn" maxlength="40" placeholder="e.g. Read 20 minutes" value="${esc(st.name)}">
+    <label class="f">Name</label><input type="text" id="hn" maxlength="40" placeholder="e.g. Gym session" value="${esc(st.name)}">
     <label class="f">Icon</label><div class="grid">${EMOJI.map(e=>`<button data-e="${e}" class="${e===st.emoji?"on":""}">${e}</button>`).join("")}</div>
     <label class="f">Colour</label><div class="cols">${COLORS.map(c=>`<button data-c="${c}" style="background:${c}" class="${c===st.color?"on":""}"></button>`).join("")}</div>
-    <label class="f">Repeat on</label><div class="dsel">${DN.map((d,i)=>`<button data-d="${i}" class="${st.days.includes(i)?"on":""}">${d}</button>`).join("")}</div>
-    <div class="quick"><button data-q="all">Every day</button><button data-q="wk">Weekdays</button><button data-q="we">Weekends</button></div>
+    <label class="f">How often</label><div class="seg"><button data-f="days" class="${st.freq==="days"?"on":""}">Set days</button><button data-f="week" class="${st.freq==="week"?"on":""}">Times a week</button></div>
+    ${st.freq==="days"?`<div class="dsel" style="margin-top:10px">${DN.map((d,i)=>`<button data-d="${i}" class="${st.days.includes(i)?"on":""}">${d}</button>`).join("")}</div>
+      <div class="quick"><button data-q="all">Every day</button><button data-q="wk">Weekdays</button><button data-q="we">Weekends</button></div>`
+    :`<div class="stepper"><button data-st="-1" ${st.target<=1?"disabled":""}>−</button><div><b>${st.target}</b><span>time${st.target===1?"":"s"} a week</span></div><button data-st="1" ${st.target>=6?"disabled":""}>+</button></div>
+      <div class="note">Do it on any days you like. It shows every day until you've hit the target, and the week resets on Monday.</div>`}
     <div class="acts">${h?`<button class="btn ghost" id="del" style="flex:0 0 auto;width:auto;color:#ff4b4b">Delete</button>`:""}<button class="btn ghost" data-close>Cancel</button><button class="btn" id="save">Save</button></div>`);
+    $("#sheet").scrollTop=y;
     const hn=$("#hn");hn.oninput=()=>st.name=hn.value;
     document.querySelectorAll("[data-e]").forEach(b=>b.onclick=()=>{st.emoji=b.dataset.e;draw()});
     document.querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>{st.color=b.dataset.c;draw()});
+    document.querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{st.freq=b.dataset.f;draw()});
+    document.querySelectorAll("[data-st]").forEach(b=>b.onclick=()=>{st.target=Math.min(6,Math.max(1,st.target+ +b.dataset.st));draw()});
     document.querySelectorAll("[data-d]").forEach(b=>b.onclick=()=>{const i=+b.dataset.d;st.days=st.days.includes(i)?st.days.filter(x=>x!==i):[...st.days,i].sort();draw()});
     document.querySelectorAll("[data-q]").forEach(b=>b.onclick=()=>{st.days={all:[0,1,2,3,4,5,6],wk:[0,1,2,3,4],we:[5,6]}[b.dataset.q];draw()});
     $("#save").onclick=()=>{
       const n=st.name.trim();if(!n){toast("Give it a name");hn.focus();return}
-      if(!st.days.length){toast("Pick at least one day");return}
-      if(h)Object.assign(h,{name:n,emoji:st.emoji,color:st.color,days:st.days});else addHabit({name:n,emoji:st.emoji,color:st.color,days:st.days});
+      if(st.freq==="days"&&!st.days.length){toast("Pick at least one day");return}
+      const o={name:n,emoji:st.emoji,color:st.color,freq:st.freq,target:st.target,days:st.days.length?st.days:[0,1,2,3,4,5,6]};
+      if(h)Object.assign(h,o);else addHabit(o);
       closeSheet();if(h)commit();
     };
     const del=$("#del");if(del)del.onclick=()=>{
@@ -537,6 +655,25 @@ function openSheet(html){$("#sheet").innerHTML=html;$("#ov").classList.add("show
 function closeSheet(){$("#ov").classList.remove("show")}
 $("#ov").onclick=e=>{if(e.target.id==="ov")closeSheet()};
 let tt;function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("show"),1800)}
+
+/* ---------- install prompt (for friends opening the link) ---------- */
+const STANDALONE=matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
+let installEvt=null;addEventListener("beforeinstallprompt",e=>{e.preventDefault();installEvt=e;if(!$("#ov").classList.contains("show"))render()});
+const skippedInstall=()=>{try{return localStorage.getItem("habits.noinstall")==="1"}catch(e){return false}};
+function installSheet(){
+  const ios=/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+  openSheet(`<div style="font-size:44px;text-align:center">📲</div><h2 style="text-align:center">Install Habits</h2>
+  <div class="note">Add it to your home screen so it opens full-screen like a normal app. <b style="color:var(--txt)">Do this before you start</b>: the browser and the home-screen app keep separate progress.</div>
+  ${ios?`<ol class="steps"><li>Tap <b>Share</b> <span class="kbd">⬆</span> in Safari (on newer iPhones tap <b>⋯</b> first)</li><li>Tap <b>Add to Home Screen</b></li><li>Tap <b>Add</b>, then open <b>Habits</b> from your home screen</li></ol>`
+       :`<ol class="steps"><li>Tap the <b>⋮</b> menu in Chrome</li><li>Tap <b>Install app</b> or <b>Add to Home screen</b></li><li>Open <b>Habits</b> from your home screen</li></ol>`}
+  ${S.habits.length?`<div class="note">Already tracking in the browser? Copy a backup first, then use Habits → Restore in the installed app.</div>`:""}
+  <div class="acts">${S.habits.length?`<button class="btn ghost" id="instbk">Copy backup</button>`:""}${installEvt?`<button class="btn" id="instgo">Install</button>`:`<button class="btn" data-close>Got it</button>`}</div>
+  <button class="note" id="instskip" style="display:block;margin:16px auto 0;text-decoration:underline">Keep using it in the browser</button>`);
+  const g=$("#instgo");if(g)g.onclick=async()=>{installEvt.prompt();try{await installEvt.userChoice}catch(e){}installEvt=null;closeSheet();render()};
+  const bk=$("#instbk");if(bk)bk.onclick=async()=>{try{await navigator.clipboard.writeText(JSON.stringify(S));toast("Backup copied")}catch(e){toast("Use Habits → Copy backup instead")}};
+  $("#instskip").onclick=()=>{try{localStorage.setItem("habits.noinstall","1")}catch(e){}closeSheet();render()};
+}
+if(!STANDALONE&&!skippedInstall())setTimeout(installSheet,700);
 
 /* ---------- liquid glass tab bar ---------- */
 const glass=$("#glass"),lens=$("#lens"),tabs=[...glass.querySelectorAll("button")];
@@ -559,7 +696,7 @@ glass.addEventListener("pointermove",e=>{
   const w=lens.offsetWidth,max=glass.clientWidth-w-6;
   const x=Math.min(max,Math.max(6,e.clientX-glass.getBoundingClientRect().left-drag.off));
   lens.style.translate=x+"px 0";
-  const i=nearestTab(x+w/2);tabs.forEach((b,j)=>b.classList.toggle("hover",j===i));
+  const i=nearestTab(x+w/2);if(i!==drag.hv){if(drag.hv!==undefined)clack(.3);drag.hv=i}tabs.forEach((b,j)=>b.classList.toggle("hover",j===i));
 });
 function endDrag(e,cancel){
   if(!drag||e.pointerId!==drag.id)return;const d=drag;drag=null;
