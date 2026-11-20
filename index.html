@@ -609,19 +609,39 @@ function tones(fs,{gap=.07,dur=.1,type="triangle",vol=.16,force}={}){
       g.gain.setValueAtTime(0,s);g.gain.linearRampToValueAtTime(vol,s+.01);g.gain.exponentialRampToValueAtTime(.0008,s+dur+.18);
       o.connect(g);g.connect(a.destination);o.start(s);o.stop(s+dur+.22)})}catch(e){}
 }
-let NB=null;
-function clack(vol=.4){
+let NB=null,NB0=null,popStep=0;
+// Light bubble pop for the tab bar: a soft sine sweeping quickly upward plus a tiny click.
+function bubble(vol=.22,mult=1){
+  if(!S.settings.sound)return;
+  try{const a=ac(),t=a.currentTime+.003,out=a.destination,j=mult*(.98+Math.random()*.04);
+    const o=a.createOscillator(),g=a.createGain();o.type="sine";
+    o.frequency.setValueAtTime(380*j,t);o.frequency.exponentialRampToValueAtTime(1150*j,t+.035);
+    g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(vol,t+.004);g.gain.exponentialRampToValueAtTime(.0001,t+.07);
+    o.connect(g);g.connect(out);o.start(t);o.stop(t+.08);
+    if(!NB0){NB0=a.createBuffer(1,a.sampleRate*.02|0,a.sampleRate);const d=NB0.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,6)}
+    const n=a.createBufferSource(),f=a.createBiquadFilter(),ng=a.createGain();n.buffer=NB0;f.type="highpass";f.frequency.value=2500;
+    ng.gain.setValueAtTime(vol*.35,t);ng.gain.exponentialRampToValueAtTime(.0001,t+.015);n.connect(f);f.connect(ng);ng.connect(out);n.start(t);n.stop(t+.02);
+  }catch(e){}
+}
+// Each page change pops a step higher (pentatonic up to an octave), then resets after 6.
+const POP_STEPS=[0,2,4,7,9,12];
+function popNext(vol=.22){bubble(vol,Math.pow(2,POP_STEPS[popStep]/12));popStep=(popStep+1)%POP_STEPS.length}
+// Wooden chess-piece clack, used only when ticking off a habit.
+function chess(vol=.45){
   if(!S.settings.sound)return;
   try{const a=ac();
     if(!NB){NB=a.createBuffer(1,a.sampleRate*.08|0,a.sampleRate);const d=NB.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,4)}
-    const t=a.currentTime+.004,out=a.destination,n=a.createBufferSource();n.buffer=NB;n.playbackRate.value=.9+Math.random()*.2;
+    const t=a.currentTime+.004,out=a.destination;
+    const n=a.createBufferSource();n.buffer=NB;n.playbackRate.value=.9+Math.random()*.2;
     const bp=a.createBiquadFilter();bp.type="bandpass";bp.frequency.value=1700+Math.random()*400;bp.Q.value=2.2;
-    const g=a.createGain();g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.001,t+.05);n.connect(bp);bp.connect(g);g.connect(out);n.start(t);n.stop(t+.08);
+    const g=a.createGain();g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.001,t+.05);
+    n.connect(bp);bp.connect(g);g.connect(out);n.start(t);n.stop(t+.08);
     const o=a.createOscillator(),og=a.createGain();o.type="sine";o.frequency.setValueAtTime(240,t);o.frequency.exponentialRampToValueAtTime(85,t+.06);
     og.gain.setValueAtTime(vol*.9,t);og.gain.exponentialRampToValueAtTime(.001,t+.08);o.connect(og);og.connect(out);o.start(t);o.stop(t+.1);
+    const o2=a.createOscillator(),g2=a.createGain();o2.type="triangle";o2.frequency.value=640+Math.random()*60;
+    g2.gain.setValueAtTime(vol*.22,t);g2.gain.exponentialRampToValueAtTime(.001,t+.045);o2.connect(g2);g2.connect(out);o2.start(t);o2.stop(t+.06);
   }catch(e){}
 }
-document.addEventListener("pointerdown",e=>{if(e.target.closest&&e.target.closest("button"))clack()},{passive:true});
 const PACKS={
   s_chime:o=>tones([987.8,1318.5],{gap:.075,...o}),
   s_pop:o=>tones([660,990],{gap:.04,dur:.03,type:"square",vol:.06,...o}),
@@ -868,7 +888,7 @@ function tap(h,k){
   const X=computeXP(),a={xp:X.total,bal:balance(X),L:lvl(X.total).L,perfect:isPerfect(k),ds:dayStreak(),wc:weekly(h)?weekCount(h,parse(k)):0};
   const row=document.querySelector(`[data-t="${h.id}"]`);if(!row)return;
   const r=row.querySelector(".chk").getBoundingClientRect(),diff=a.xp-b.xp;
-  if(isDone(h,k)){row.classList.add("pop");SFX.tick();vib(12);burst(r.left+r.width/2,r.top+r.height/2,[cssv("--acc")],12,"dot",1);floatTxt({left:r.left-30,width:r.width,top:r.top},`+${diff} XP`);const gd=a.bal-b.bal;if(gd>0)setTimeout(()=>floatTxt({left:r.left-30,width:r.width,top:r.top+22},`+${gd} gold`,"gold"),160)}
+  if(isDone(h,k)){row.classList.add("pop");chess();SFX.tick();vib(12);burst(r.left+r.width/2,r.top+r.height/2,[cssv("--acc")],12,"dot",1);floatTxt({left:r.left-30,width:r.width,top:r.top},`+${diff} XP`);const gd=a.bal-b.bal;if(gd>0)setTimeout(()=>floatTxt({left:r.left-30,width:r.width,top:r.top+22},`+${gd} gold`,"gold"),160)}
   else{SFX.untick();if(diff)floatTxt({left:r.left-30,width:r.width,top:r.top},`${diff} XP`,"neg")}
   const isToday=k===key(today());
   if(weekly(h)&&b.wc<h.target&&a.wc>=h.target)
@@ -987,7 +1007,7 @@ function rCamp(X){
   html+=`<div class="sec">Settings</div><div class="card"><div class="setrow"><span>Sound effects</span><button class="sw ${S.settings.sound?"on":""}" id="snd"></button></div>
     <div class="setrow"><span>Perfect-day animation</span><button class="btn ghost sm" id="prevarch">${I("play")}Preview</button></div></div>`;
   html+=`<div class="sec">Backup</div><div class="card"><div class="note" style="margin-top:0">Your data is stored on this phone only. Copy a backup now and then (e.g. into Notes) so you can restore it on a new phone.</div><div class="acts" style="margin-top:12px"><button class="btn ghost" id="exp">Copy backup</button><button class="btn ghost" id="imp">Restore</button></div></div>`;
-  html+=`<div class="note" id="ver" style="text-align:center;margin-top:20px;opacity:.6;padding:8px;user-select:none">Version 14${S.admin.on?" · admin":""}</div>`;
+  html+=`<div class="note" id="ver" style="text-align:center;margin-top:20px;opacity:.6;padding:8px;user-select:none">Version 17${S.admin.on?" · admin":""}</div>`;
   $("#main").innerHTML=html;
   $("#mng2").onclick=()=>go("manage");bindAccount();
   const ad=$("#adm");if(ad)ad.onclick=()=>go("admin");
@@ -1014,13 +1034,23 @@ function rManage(){
 
 /* ================= accounts, friends & leaderboard (Supabase) ================= */
 const CFG=window.HABITS_CONFIG||{};
-const SOCIAL_ON=!!(CFG.supabaseUrl&&CFG.supabaseAnonKey);
+// Accept whatever got pasted: the project URL, a URL with /rest/v1 etc. on the end, or a dashboard link.
+function cleanUrl(u){u=(u||"").trim();const m=u.match(/supabase\.com\/dashboard\/project\/([a-z0-9]+)/i);if(m)return`https://${m[1]}.supabase.co`;
+  try{return new URL(/^https?:\/\//.test(u)?u:"https://"+u).origin}catch(e){return u}}
+const SB_URL=cleanUrl(CFG.supabaseUrl),SB_KEY=(CFG.supabaseAnonKey||"").trim().replace(/^["']|["']$/g,"");
+const SOCIAL_ON=!!(SB_URL&&SB_KEY);
+async function testConnection(){
+  if(!SOCIAL_ON)return{ok:false,msg:"config.js is empty"};
+  try{const r=await fetch(SB_URL+"/auth/v1/settings",{headers:{apikey:SB_KEY}});const t=await r.text();
+    if(r.ok)return{ok:true,msg:"Connected. Email sign-up "+(/"email":true/.test(t)?"is on":"looks OFF: turn on Email in Authentication → Sign In / Providers")};
+    return{ok:false,msg:`${r.status}: ${t.slice(0,140)}`}}catch(e){return{ok:false,msg:"Couldn't reach "+SB_URL+". Check the URL."}}
+}
 let sb=null,me=null,myProfile=null,board=null,boardTab="week",socialErr=null,socialReady=false,authMode="up",pushT=null;
 function loadSb(){return new Promise(res=>{if(window.supabase)return res(true);const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js";s.onload=()=>res(true);s.onerror=()=>res(false);document.head.appendChild(s)})}
 async function initSocial(){
   if(!SOCIAL_ON)return;
   if(!(await loadSb())||!window.supabase){socialErr="Couldn't reach the server. Check your connection and reopen the app.";socialReady=true;if(view==="friends")render();return}
-  sb=window.supabase.createClient(CFG.supabaseUrl,CFG.supabaseAnonKey,{auth:{persistSession:true,autoRefreshToken:true,storageKey:"habits-auth"}});
+  sb=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true,storageKey:"habits-auth"}});
   sb.auth.onAuthStateChange((ev,session)=>{
     if(ev==="PASSWORD_RECOVERY")return newPasswordSheet();
     const u=session?session.user:null;if((u&&u.id)!==(me&&me.id))setUser(u);
@@ -1218,6 +1248,7 @@ function rAdmin(X){
   <button class="btn ghost" id="a_reset" style="margin-top:8px">Reset gold and purchases</button>
   <div class="sec">Preview animations</div><div class="grid2">${b("p_pd","Perfect day","today")}${b("p_box","Reward box","gift")}${b("p_lv","Level up","star")}${b("p_st","Streak","flame")}${b("p_wk","Weekly goal","calendar")}${b("p_fx","Celebration","wand")}</div>
   <div class="sec">Palette</div>${b("a_pal","Open custom palette editor","palette")}
+  ${typeof testConnection==="function"?`<div class="sec">Leaderboard</div><div class="card"><div class="sub" style="margin:0 0 10px;word-break:break-all">Server: ${esc(SB_URL||"not set")}</div><div class="note" id="conn" style="margin:0 0 10px"></div><button class="btn ghost" id="a_conn">Test connection</button></div>`:""}
   <div class="sec">Data</div>${b("a_inst","Show install prompt again")}<button class="btn ghost" id="a_wipe" style="margin-top:8px;color:#ff6b6b">Erase all data</button>
   <button class="btn" id="a_exit" style="margin-top:22px">Exit admin mode</button>
   <div class="note" style="text-align:center">Admin mode only changes this device. It's a convenience lock, not real security.</div>`;
@@ -1236,6 +1267,7 @@ function rAdmin(X){
   on("p_wk",()=>celebrate({icon:"calendar",k:"var(--acc)",big:"3/3",title:"Weekly goal hit",sub:"Preview of the weekly goal screen.",xp:XP_WEEK,sound:"perfect"}));
   on("p_fx",()=>{const r=$("#p_fx").getBoundingClientRect();bigFx(r.left+r.width/2,r.top)});
   on("a_pal",paletteEditor);
+  on("a_conn",async()=>{$("#conn").textContent="Testing…";const r=await testConnection();$("#conn").style.color=r.ok?"var(--acc)":"#ff6b6b";$("#conn").textContent=r.msg});
   on("a_inst",()=>{try{localStorage.removeItem("habits.noinstall")}catch(e){}toast("Install prompt will show next time in the browser")});
   on("a_wipe",()=>{openSheet(`<h2>Erase all data?</h2><div class="note">Deletes every habit, all history, gold and unlocks on this device. Copy a backup first if you might want it back.</div><div class="acts"><button class="btn ghost" data-close>Keep</button><button class="btn danger" id="wgo">Erase</button></div>`);
     $("#wgo").onclick=()=>{S={v:4,updated:0,habits:[],log:{},settings:{sound:true},admin:{on:true,all:S.admin.all}};shown=null;closeSheet();commit();toast("All data erased")}});
@@ -1319,19 +1351,19 @@ function lensTo(i,anim=true){
 }
 function nearestTab(cx){let best=0,d=1e9;tabs.forEach((b,i)=>{const m=Math.abs(b.offsetLeft+b.offsetWidth/2-cx);if(m<d){d=m;best=i}});return best}
 function go(v){if(v!==view){if(view!=="manage")prevView=view;view=v;if(v==="today")cur=today();render();scrollTo({top:0,behavior:"smooth"})}else lensTo(tabIdx())}
-function goTab(v){vib(8);go(v)}
+function goTab(v,quiet){vib(8);if(!quiet&&v!==view)popNext();go(v)}
 let drag=null;
 glass.addEventListener("pointerdown",e=>{drag={id:e.pointerId,x0:e.clientX,off:e.clientX-glass.getBoundingClientRect().left-lensX(),moved:false};const b=e.target.closest("button");if(b&&tabs.indexOf(b)!==tabIdx())drag.off=lens.offsetWidth/2});
 glass.addEventListener("pointermove",e=>{
   if(!drag||e.pointerId!==drag.id)return;
   if(!drag.moved){if(Math.abs(e.clientX-drag.x0)<8)return;drag.moved=true;lens.classList.add("drag");try{glass.setPointerCapture(e.pointerId)}catch(_){}}
   const w=lens.offsetWidth,max=glass.clientWidth-w-6,x=Math.min(max,Math.max(6,e.clientX-glass.getBoundingClientRect().left-drag.off));
-  lens.style.translate=x+"px 0";const i=nearestTab(x+w/2);if(i!==drag.hv){if(drag.hv!==undefined)clack(.3);drag.hv=i}tabs.forEach((b,j)=>b.classList.toggle("hover",j===i));
+  lens.style.translate=x+"px 0";const i=nearestTab(x+w/2);if(i!==drag.hv){if(drag.hv!==undefined)popNext(.16);drag.hv=i}tabs.forEach((b,j)=>b.classList.toggle("hover",j===i));
 });
 function endDrag(e,cancel){
   if(!drag||e.pointerId!==drag.id)return;const d=drag;drag=null;lens.classList.remove("drag");tabs.forEach(b=>b.classList.remove("hover"));
   if(cancel){lensTo(tabIdx());return}
-  if(d.moved){goTab(tabs[nearestTab(lensX()+lens.offsetWidth/2)].dataset.v);lensTo(tabIdx())}
+  if(d.moved){goTab(tabs[nearestTab(lensX()+lens.offsetWidth/2)].dataset.v,true);lensTo(tabIdx())}
   else{const b=e.target.closest&&e.target.closest("button");if(b)goTab(b.dataset.v)}
 }
 glass.addEventListener("pointerup",e=>endDrag(e,false));glass.addEventListener("pointercancel",e=>endDrag(e,true));
